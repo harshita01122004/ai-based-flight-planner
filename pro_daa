@@ -1,0 +1,243 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import heapq, time, threading, math
+from collections import deque
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+# ========== Graph Data ==========
+graph = {
+    "Delhi":{"Mumbai":4,"Kolkata":8,"Dubai":12,"Singapore":9,"London":14},
+    "Mumbai":{"Delhi":4,"Bangalore":5,"Dubai":9,"Maldives":6},
+    "Kolkata":{"Delhi":8,"Chennai":6,"Singapore":8},
+    "Bangalore":{"Mumbai":5,"Chennai":3,"Dubai":10},
+    "Chennai":{"Bangalore":3,"Singapore":4,"Maldives":5},
+    "Hyderabad":{"Mumbai":5,"Chennai":4,"Dubai":11},
+
+    "Dubai":{"Delhi":12,"Mumbai":9,"London":7,"Paris":8,"Singapore":7},
+    "Singapore":{"Kolkata":8,"Chennai":4,"Dubai":7,"Tokyo":9,"Sydney":13},
+    "London":{"Delhi":14,"Dubai":7,"New York":15,"Paris":3},
+    "Paris":{"London":3,"Dubai":8},
+    "New York":{"London":15,"Tokyo":19},
+    "Tokyo":{"Singapore":9,"New York":19},
+
+    "Maldives":{"Chennai":5,"Mumbai":6},
+    "Sydney":{"Singapore":13}
+}
+
+airports = list(graph.keys())
+
+node_pos = {
+    "Delhi":(3,8),"Mumbai":(1.8,6),"Kolkata":(4.8,8),
+    "Bangalore":(2.8,4),"Chennai":(3.6,3),"Hyderabad":(2.9,5),
+    "Dubai":(4,10),"Singapore":(7,6),"Maldives":(4.5,4),
+    "London":(1,12),"Paris":(1.8,11),
+    "New York":(-1,11),"Tokyo":(9,8),"Sydney":(9,2)
+}
+
+# ========== Heuristic for A* ==========
+def h(n, dest):
+    (x1, y1) = node_pos[n]
+    (x2, y2) = node_pos[dest]
+    return math.sqrt((x1-x2)**2 + (y1-y2)**2)
+
+# ========== Dijkstra ==========
+def dijkstra(s, d):
+    dist={n:float("inf") for n in graph}
+    dist[s]=0
+    parent={s:None}
+    
+    pq=[(0,s)]
+    visited=set()
+
+    while pq:
+        w,node = heapq.heappop(pq)
+        if node in visited: continue
+        visited.add(node)
+        if node==d: break
+
+        for nb,wt in graph[node].items():
+            nd=w+wt
+            if nd < dist[nb]:
+                dist[nb]=nd
+                parent[nb]=node
+                heapq.heappush(pq,(nd,nb))
+
+    if dist[d]==float("inf"): return None, float("inf")
+
+    path=[]; cur=d
+    while cur is not None:
+        path.insert(0,cur)
+        cur=parent.get(cur)
+    return path, dist[d]
+
+# ========== A* Search (AI) ==========
+def astar(start, goal):
+    open_set = [(0, start)]
+    g = {n: float("inf") for n in graph}
+    g[start] = 0
+    parent = {start: None}
+
+    closed = set()
+
+    while open_set:
+        _, node = heapq.heappop(open_set)
+        if node in closed: continue
+        closed.add(node)
+
+        if node == goal:
+            break
+
+        for nb, wt in graph[node].items():
+            new_cost = g[node] + wt
+            if new_cost < g[nb]:
+                g[nb] = new_cost
+                parent[nb] = node
+                f = new_cost + h(nb, goal)
+                heapq.heappush(open_set, (f, nb))
+
+    if g[goal] == float("inf"):
+        return None, float("inf")
+
+    path = []; cur = goal
+    while cur is not None:
+        path.insert(0, cur)
+        cur = parent.get(cur)
+    return path, g[goal]
+
+# ========== All Paths (DFS) ==========
+def all_paths(s,d):
+    res=[]
+    def dfs(n,target,vis,path,cost):
+        if n==target:
+            res.append((list(path),cost)); return
+        for nb,wt in graph[n].items():
+            if nb not in vis:
+                vis.add(nb); path.append(nb)
+                dfs(nb,target,vis,path,cost+wt)
+                path.pop(); vis.remove(nb)
+    dfs(s,d,{s},[s],0)
+    return res
+
+# ========== Quick Sort ==========
+def quick_sort(arr):
+    if len(arr)<=1: return arr
+    pivot=arr[0][1]
+    left=[x for x in arr[1:] if x[1]<=pivot]
+    right=[x for x in arr[1:] if x[1]>pivot]
+    return quick_sort(left)+[arr[0]]+quick_sort(right)
+
+# ========== Threaded Merge Sort ==========
+def merge_sort_inplace(a):
+    if len(a)<=1: return
+    m=len(a)//2; L=a[:m]; R=a[m:]
+    t1=threading.Thread(target=merge_sort_inplace,args=(L,))
+    t2=threading.Thread(target=merge_sort_inplace,args=(R,))
+    t1.start(); t2.start(); t1.join(); t2.join()
+    i=j=k=0
+    while i<len(L) and j<len(R):
+        if L[i][1] <= R[j][1]: a[k]=L[i]; i+=1
+        else: a[k]=R[j]; j+=1
+        k+=1
+    while i<len(L): a[k]=L[i]; i+=1; k+=1
+    while j<len(R): a[k]=R[j]; j+=1; k+=1
+
+# ========== Draw Graph ==========
+_canvas=None
+def draw_graph(best=None,bg=True):
+    global _canvas
+    if _canvas:
+        _canvas.get_tk_widget().pack_forget()
+        _canvas=None
+
+    fig,ax=plt.subplots(figsize=(9.2,6.5))
+    ax.set_title("Flight Network | AI Best Path (Green)",fontsize=12,fontweight="bold")
+    ax.set_xlim(-1,10); ax.set_ylim(-1,13); ax.axis('off')
+
+    if bg:
+        for u in graph:
+            for v,w in graph[u].items():
+                x1,y1=node_pos[u]; x2,y2=node_pos[v]
+                ax.plot([x1,x2],[y1,y2],linewidth=1,alpha=0.25,color="gray")
+
+    for c,(x,y) in node_pos.items():
+        ax.scatter(x,y,s=150,color="#71c7ec")
+        ax.text(x+0.15,y+0.15,c,fontsize=10,fontweight="bold")
+
+    if best:
+        for i in range(len(best)-1):
+            u,b=best[i],best[i+1]
+            x1,y1=node_pos[u]; x2,y2=node_pos[b]
+            ax.plot([x1,x2],[y1,y2],linewidth=4,color="green")
+
+    c=FigureCanvasTkAgg(fig,master=right_frame)
+    c.draw(); c.get_tk_widget().pack(fill="both",expand=True)
+    _canvas=c
+
+# ========== Action ==========
+def find_route_action():
+    s=src_cb.get(); d=dst_cb.get()
+    if not s or not d: return
+    if s==d: messagebox.showinfo("Same","Source & Destination same"); return
+
+    out_text.delete("1.0",tk.END)
+
+    dij,dc = dijkstra(s,d)
+    ast,ac = astar(s,d)
+
+    if not dij:
+        out_text.insert(tk.END,"No route available\n")
+        draw_graph(); return
+
+    paths=all_paths(s,d)
+    route_list=[(" -> ".join(p),c) for p,c in paths]
+
+    t=time.time(); qs=quick_sort(route_list.copy());qt=time.time()-t
+    arr=route_list.copy();t=time.time();merge_sort_inplace(arr);mt=time.time()-t
+
+    out_text.insert(tk.END,f"✅ Best Route (Dijkstra): {' -> '.join(dij)} | Cost: {dc}\n")
+    out_text.insert(tk.END,f"🤖 AI A* Route: {' -> '.join(ast)} | Cost: {ac}\n\n")
+
+    out_text.insert(tk.END,f"⚡ Quick Sort Time: {qt:.6f}s\n⚡ Merge Sort Time: {mt:.6f}s\n\n")
+
+    out_text.insert(tk.END,"🔥 Top Alternate Paths:\n")
+    for p,c in qs[:5]: out_text.insert(tk.END,f"{p} | {c}\n")
+
+    draw_graph(ast,show_bg.get())
+
+# ========== UI ==========
+root=tk.Tk()
+root.title("✈️ Flight Route Planner - AI Powered")
+root.geometry("1100x650")
+root.configure(bg="#e7f3ff")
+
+left_frame=tk.Frame(root,bg="#cfe6ff",width=320,bd=2,relief="ridge")
+left_frame.pack(side="left",fill="y")
+
+right_frame=tk.Frame(root,bg="white")
+right_frame.pack(side="right",fill="both",expand=True)
+
+tk.Label(left_frame,text="✈️ Flight Route Finder (AI + Dijkstra)",bg="#cfe6ff",
+         font=("Arial",13,"bold")).pack(pady=10)
+
+tk.Label(left_frame,text="Source Airport:",bg="#cfe6ff",font=("Arial",10,"bold")).pack(pady=5)
+src_cb=ttk.Combobox(left_frame,values=airports,width=26); src_cb.pack()
+
+tk.Label(left_frame,text="Destination Airport:",bg="#cfe6ff",font=("Arial",10,"bold")).pack(pady=5)
+dst_cb=ttk.Combobox(left_frame,values=airports,width=26); dst_cb.pack()
+
+btn = tk.Button(left_frame,text="Find Best Route",font=("Arial",11,"bold"),
+          bg="#0077ff",fg="white",activebackground="#005fcc",
+          command=find_route_action)
+btn.pack(pady=15,fill="x",padx=15)
+
+show_bg=tk.BooleanVar(value=True)
+tk.Checkbutton(left_frame,text="Show Full Network",bg="#cfe6ff",font=("Arial",10),
+               variable=show_bg,command=lambda: draw_graph()).pack(anchor="w",padx=10,pady=5)
+
+tk.Label(left_frame,text="Results:",bg="#cfe6ff",font=("Arial",11,"bold")).pack()
+out_text=tk.Text(left_frame,height=25,width=39,font=("Consolas",10),bg="white",fg="black")
+out_text.pack(padx=5,pady=5)
+
+draw_graph()
+root.mainloop()
